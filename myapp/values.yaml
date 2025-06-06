@@ -1,0 +1,226 @@
+# Default values for myapp.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: nginx
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+# Init containers configuration
+initContainers:
+  enabled: true
+  containers:
+    - name: init-db
+      image: busybox:1.35
+      command: ['sh', '-c', 'until nslookup mydb; do echo waiting for mydb; sleep 2; done;']
+    - name: init-storage
+      image: busybox:1.35
+      command: ['sh', '-c', 'mkdir -p /shared/data && echo "Storage initialized" > /shared/data/init.txt']
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+
+# Sidecar containers configuration
+sidecarContainers:
+  enabled: true
+  containers:
+    - name: logging-sidecar
+      image: fluentd:v1.16-1
+      resources:
+        requests:
+          memory: "64Mi"
+          cpu: "50m"
+        limits:
+          memory: "128Mi"
+          cpu: "100m"
+      volumeMounts:
+        - name: shared-logs
+          mountPath: /var/log
+    - name: monitoring-sidecar
+      image: prom/prometheus:latest
+      ports:
+        - containerPort: 9090
+          name: prometheus
+      resources:
+        requests:
+          memory: "128Mi"
+          cpu: "100m"
+        limits:
+          memory: "256Mi"
+          cpu: "200m"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# Additional volumes on the output Deployment definition.
+volumes:
+  - name: shared-data
+    emptyDir: {}
+  - name: shared-logs
+    emptyDir: {}
+  - name: config-volume
+    configMap:
+      name: "{{ include \"myapp.fullname\" . }}-config"
+  - name: secret-volume
+    secret:
+      secretName: "{{ include \"myapp.fullname\" . }}-secret"
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts:
+  - name: shared-data
+    mountPath: "/shared"
+  - name: shared-logs
+    mountPath: "/var/log"
+  - name: config-volume
+    mountPath: "/etc/config"
+    readOnly: true
+  - name: secret-volume
+    mountPath: "/etc/secrets"
+    readOnly: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# ConfigMap configuration
+configMap:
+  enabled: true
+  data:
+    app.properties: |
+      app.name=myapp
+      app.version=1.0.0
+      database.host=localhost
+      database.port=5432
+    nginx.conf: |
+      server {
+        listen 80;
+        server_name localhost;
+        location / {
+          root /usr/share/nginx/html;
+          index index.html index.htm;
+        }
+      }
+
+# Secret configuration
+secret:
+  enabled: true
+  type: Opaque
+  data:
+    database-password: cGFzc3dvcmQ=  # base64 encoded "password"
+    api-key: YWJjZGVmZ2hpams=        # base64 encoded "abcdefghijk"
+    tls-key: |
+      LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t
+      # Base64 encoded TLS private key here
+      LS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQ==
+
+# Gateway API configuration
+gateway:
+  enabled: true
+  gatewayClassName: istio
+  listeners:
+    - name: web
+      hostname: "*.example.com"
+      port: 80
+      protocol: HTTP
+    - name: web-secure
+      hostname: "*.example.com"
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: example-com-tls
+
+# HTTPRoute configuration
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: myapp-gateway  # Will be templated as fullname-gateway
+  hostnames:
+    - "myapp.example.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: "/"
+      backendRefs:
+        - name: myapp  # Will be templated as fullname
+          port: 80
+    - matches:
+        - path:
+            type: PathPrefix
+            value: "/api"
+      backendRefs:
+        - name: myapp  # Will be templated as fullname
+          port: 80

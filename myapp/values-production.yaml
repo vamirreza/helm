@@ -1,0 +1,204 @@
+# Example values for production environment
+# Copy this file and customize for your production deployment
+
+replicaCount: 3
+
+image:
+  repository: myapp/production
+  pullPolicy: IfNotPresent
+  tag: "v1.2.0"
+
+# Init containers configuration
+initContainers:
+  enabled: true
+  containers:
+    - name: init-db
+      image: postgres:15-alpine
+      command: ['sh', '-c', 'until pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER; do echo waiting for database; sleep 2; done;']
+      env:
+        - name: DB_HOST
+          value: "postgres.database.svc.cluster.local"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_USER
+          value: "myapp"
+    - name: init-cache
+      image: redis:7-alpine
+      command: ['sh', '-c', 'until redis-cli -h redis.cache.svc.cluster.local ping; do echo waiting for redis; sleep 2; done;']
+
+# Sidecar containers configuration
+sidecarContainers:
+  enabled: true
+  containers:
+    - name: logging-sidecar
+      image: fluentd:v1.16-1
+      resources:
+        requests:
+          memory: "128Mi"
+          cpu: "100m"
+        limits:
+          memory: "256Mi"
+          cpu: "200m"
+      volumeMounts:
+        - name: shared-logs
+          mountPath: /var/log
+        - name: fluentd-config
+          mountPath: /fluentd/etc
+    - name: monitoring-sidecar
+      image: prom/prometheus:latest
+      ports:
+        - containerPort: 9090
+          name: prometheus
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "200m"
+        limits:
+          memory: "512Mi"
+          cpu: "400m"
+
+# Resource limits for main container
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+
+# Gateway API configuration for production
+gateway:
+  enabled: true
+  gatewayClassName: istio
+  listeners:
+    - name: web
+      hostname: "*.example.com"
+      port: 80
+      protocol: HTTP
+    - name: web-secure
+      hostname: "*.example.com"
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: example-com-tls
+
+# HTTPRoute configuration for production
+httpRoute:
+  enabled: true
+  hostnames:
+    - "myapp.example.com"
+    - "api.example.com"
+
+# ConfigMap with production settings
+configMap:
+  enabled: true
+  data:
+    app.properties: |
+      app.name=myapp
+      app.version=1.2.0
+      app.environment=production
+      database.host=postgres.database.svc.cluster.local
+      database.port=5432
+      database.name=myapp_prod
+      cache.host=redis.cache.svc.cluster.local
+      cache.port=6379
+      log.level=INFO
+    nginx.conf: |
+      server {
+        listen 80;
+        server_name myapp.example.com api.example.com;
+        
+        location /health {
+          access_log off;
+          return 200 "healthy\n";
+          add_header Content-Type text/plain;
+        }
+        
+        location / {
+          proxy_pass http://localhost:8080;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+      }
+
+# Secret configuration (base64 encoded values)
+secret:
+  enabled: true
+  type: Opaque
+  data:
+    database-password: cHJvZHVjdGlvbl9wYXNzd29yZA==  # production_password
+    database-url: cG9zdGdyZXNxbDovL215YXBwOnByb2R1Y3Rpb25fcGFzc3dvcmRAcG9zdGdyZXMuZGF0YWJhc2Uuc3ZjLmNsdXN0ZXIubG9jYWw6NTQzMi9teWFwcF9wcm9k
+    api-key: cHJvZC1hcGkta2V5LWFiY2RlZmdoaWprbG1ub3A=  # prod-api-key-abcdefghijklmnop
+    jwt-secret: c3VwZXItc2VjdXJlLWp3dC1zZWNyZXQtZm9yLXByb2R1Y3Rpb24=  # super-secure-jwt-secret-for-production
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Volume configuration
+volumes:
+  - name: shared-data
+    persistentVolumeClaim:
+      claimName: myapp-data-pvc
+  - name: shared-logs
+    emptyDir: {}
+  - name: config-volume
+    configMap:
+      name: test-release-myapp-config
+  - name: secret-volume
+    secret:
+      secretName: test-release-myapp-secret
+  - name: fluentd-config
+    configMap:
+      name: fluentd-config
+
+volumeMounts:
+  - name: shared-data
+    mountPath: "/app/data"
+  - name: shared-logs
+    mountPath: "/var/log"
+  - name: config-volume
+    mountPath: "/etc/config"
+    readOnly: true
+  - name: secret-volume
+    mountPath: "/etc/secrets"
+    readOnly: true
+
+# Node selector for production nodes
+nodeSelector:
+  node-type: "production"
+  zone: "us-west-2a"
+
+# Tolerations for dedicated nodes
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "production"
+    effect: "NoSchedule"
+
+# Affinity rules
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - myapp
+        topologyKey: kubernetes.io/hostname

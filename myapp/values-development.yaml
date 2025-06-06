@@ -1,0 +1,133 @@
+# Example values for development environment
+# Copy this file and customize for your development deployment
+
+replicaCount: 1
+
+image:
+  repository: myapp/development
+  pullPolicy: Always
+  tag: "latest"
+
+# Disable init containers for faster development cycles
+initContainers:
+  enabled: false
+
+# Enable only logging sidecar for development
+sidecarContainers:
+  enabled: true
+  containers:
+    - name: logging-sidecar
+      image: busybox:1.35
+      command: ['sh', '-c', 'tail -f /var/log/*.log']
+      resources:
+        requests:
+          memory: "32Mi"
+          cpu: "25m"
+        limits:
+          memory: "64Mi"
+          cpu: "50m"
+      volumeMounts:
+        - name: shared-logs
+          mountPath: /var/log
+
+# Minimal resource limits for development
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Use traditional ingress instead of Gateway API for development
+gateway:
+  enabled: false
+
+httpRoute:
+  enabled: false
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: myapp.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# ConfigMap with development settings
+configMap:
+  enabled: true
+  data:
+    app.properties: |
+      app.name=myapp
+      app.version=dev
+      app.environment=development
+      database.host=localhost
+      database.port=5432
+      database.name=myapp_dev
+      log.level=DEBUG
+      debug.enabled=true
+    nginx.conf: |
+      server {
+        listen 80;
+        server_name localhost myapp.local;
+        
+        location / {
+          root /usr/share/nginx/html;
+          index index.html index.htm;
+          try_files $uri $uri/ /index.html;
+        }
+        
+        location /api {
+          proxy_pass http://localhost:8080;
+          proxy_set_header Host $host;
+        }
+      }
+
+# Simple secrets for development
+secret:
+  enabled: true
+  type: Opaque
+  data:
+    database-password: ZGV2X3Bhc3N3b3Jk  # dev_password
+    api-key: ZGV2LWFwaS1rZXk=  # dev-api-key
+
+# Disable autoscaling for development
+autoscaling:
+  enabled: false
+
+# Simple volumes for development
+volumes:
+  - name: shared-data
+    emptyDir: {}
+  - name: shared-logs
+    emptyDir: {}
+  - name: config-volume
+    configMap:
+      name: test-release-myapp-config
+  - name: secret-volume
+    secret:
+      secretName: test-release-myapp-secret
+
+volumeMounts:
+  - name: shared-data
+    mountPath: "/tmp/data"
+  - name: shared-logs
+    mountPath: "/var/log"
+  - name: config-volume
+    mountPath: "/etc/config"
+    readOnly: true
+  - name: secret-volume
+    mountPath: "/etc/secrets"
+    readOnly: true
+
+# No special node requirements for development
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

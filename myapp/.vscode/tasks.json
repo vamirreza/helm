@@ -1,0 +1,77 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Helm Lint Chart",
+            "type": "shell",
+            "command": "helm lint .",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Helm Template Render",
+            "type": "shell",
+            "command": "helm template test-release .",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Helm Install Development",
+            "type": "shell",
+            "command": "helm install myapp-dev . -f values-development.yaml --dry-run",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Helm Install Production",
+            "type": "shell",
+            "command": "helm install myapp-prod . -f values-production.yaml --dry-run",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Helm Package Chart",
+            "type": "shell",
+            "command": "helm package .",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Test All Configurations",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Helm Lint Chart",
+                "Helm Template Render",
+                "Helm Install Development",
+                "Helm Install Production"
+            ],
+            "group": "test"
+        }
+    ]
+}
